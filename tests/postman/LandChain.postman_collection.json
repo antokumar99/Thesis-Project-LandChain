@@ -1,0 +1,28 @@
+{
+  "info": {
+    "name": "LandChain",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{apiUrl}}/health"
+      }
+    },
+    {
+      "name": "Register User",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Authority Officer\",\n  \"email\": \"authority@example.com\",\n  \"password\": \"secret\",\n  \"walletAddress\": \"0x0000000000000000000000000000000000000001\",\n  \"role\": \"AUTHORITY\",\n  \"nidHash\": \"0xnid\"\n}"
+        },
+        "url": "{{apiUrl}}/api/auth/register"
+      }
+    }
+  ],
+  "variable": [{ "key": "apiUrl", "value": "http://localhost:5000" }]
+}
