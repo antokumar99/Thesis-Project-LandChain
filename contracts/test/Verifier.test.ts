@@ -9,7 +9,8 @@ describe("Verifier (real Groth16, challenge-response circuit)", function () {
 
   before(async function () {
     this.timeout(120000);
-    zk = await generateChallengeProof();
+    const [, , buyer] = await ethers.getSigners();
+    zk = await generateChallengeProof(buyer.address, ethers.id("landchain-test-salt"));
   });
 
   it("accepts a valid snarkjs-generated proof", async function () {
