@@ -1,0 +1,22 @@
+{
+  "name": "landchain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LandChain MVP monorepo for land registration, Merkle commitments, IPFS deed storage, ZK ownership proofs, and Ethereum transfers.",
+  "workspaces": [
+    "apps/*",
+    "contracts",
+    "circuits"
+  ],
+  "scripts": {
+    "dev:client": "npm --prefix apps/client run dev",
+    "dev:server": "npm --prefix apps/server run dev",
+    "build:client": "npm --prefix apps/client run build",
+    "build:server": "npm --prefix apps/server run build",
+    "compile:contracts": "npm --prefix contracts run compile",
+    "test:contracts": "npm --prefix contracts test",
+    "e2e:circuits": "npm --prefix circuits run e2e",
+    "smoke:server": "npm --prefix apps/server run smoke",
+    "test": "npm --prefix apps/server run build && npm --prefix contracts test"
+  }
+}

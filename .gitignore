@@ -1,0 +1,16 @@
+node_modules/
+.next/
+dist/
+build/
+artifacts/
+cache/
+contracts/.hardhat-local-cache/
+coverage/
+.env
+.env.local
+uploads/
+*.log
+
+.env.example
+
+package-lock.json
