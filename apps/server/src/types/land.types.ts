@@ -1,0 +1,1 @@
+export type LandStatus = "PENDING_APPROVAL" | "REGISTERED" | "REJECTED" | "LISTED_FOR_SALE";
