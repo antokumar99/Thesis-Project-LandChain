@@ -8,6 +8,12 @@ export default defineConfig({
       default: {
         version: "0.8.28",
       },
+      wasm: {
+        // For sandboxed/CI environments that cannot download a native solc:
+        // uses the repo-cached solc-js (WASM) compiler, no network needed.
+        version: "0.8.28",
+        path: ".hardhat-local-cache/hardhat-nodejs/Cache/compilers-v3/wasm/soljson-v0.8.28+commit.7893614a.js",
+      },
       production: {
         version: "0.8.28",
         settings: {

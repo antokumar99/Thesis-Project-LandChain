@@ -31,4 +31,4 @@
 /snapshots
 
 /.agents
-/.claude
+/.claudetest/.challenge-proof-cache.json
