@@ -11,9 +11,17 @@ include "components/merkleTreeChecker.circom";
  *
  * Private inputs: landIdField, ownerSecret, pathElements[], pathIndices[]
  * Public inputs:  merkleRoot
- * Public outputs: nullifier = Poseidon(ownerSecret, landIdField)
+ * Public outputs: nullifier = Poseidon(Poseidon(ownerSecret, landIdField), DOMAIN)
  *                 (stable per land+owner, lets verifiers detect proof reuse
  *                 without learning identity)
+ *
+ * DOMAIN separation: challengeProof publishes
+ *   responseNullifier = Poseidon(Poseidon(ownerSecret, landIdField), challenge)
+ * with landIdField public. If this circuit emitted the inner hash directly,
+ * anyone could test Poseidon(nullifier, challenge) == responseNullifier and
+ * retroactively deanonymise a membership proof. Hashing once more with a
+ * fixed domain tag (keccak256("landchain:membership-nullifier") mod p) keeps
+ * the two nullifier spaces unlinkable.
  */
 template LandOwnership(levels) {
   signal input landIdField;
@@ -35,9 +43,16 @@ template LandOwnership(levels) {
   }
   merkleRoot === checker.root;
 
+  // keccak256("landchain:membership-nullifier") mod p — fixed domain tag.
+  var MEMBERSHIP_DOMAIN = 7160624230185569488450522106054910242159549549043173897393582740424566747561;
+
+  component innerHasher = Poseidon2();
+  innerHasher.left <== ownerSecret;
+  innerHasher.right <== landIdField;
+
   component nullifierHasher = Poseidon2();
-  nullifierHasher.left <== ownerSecret;
-  nullifierHasher.right <== landIdField;
+  nullifierHasher.left <== innerHasher.out;
+  nullifierHasher.right <== MEMBERSHIP_DOMAIN;
   nullifier <== nullifierHasher.out;
 }
 
