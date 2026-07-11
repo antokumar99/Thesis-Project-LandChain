@@ -8,6 +8,7 @@ import { poseidonHash2 } from "./poseidon.service";
 import { uploadDeedToIpfs } from "./ipfs.service";
 import { nextLeafIndex, rebuildRegistryTree, TREE_CAPACITY } from "./merkle.service";
 import { registerLandOnChain } from "./blockchain.service";
+import { withRegistryLock } from "../utils/lock.util";
 import { badRequest, conflict, forbidden, notFound } from "../utils/errors.util";
 
 /**
@@ -78,6 +79,8 @@ export async function listPendingRequests() {
  * on-chain.
  */
 export async function approveLand(input: { landId: string; authorityId: string }) {
+  // Serialized: concurrent approvals must not read the same nextLeafIndex.
+  return withRegistryLock(async () => {
   const land = await LandModel.findOne({ landId: input.landId });
   if (!land) throw notFound("Land not found.");
   if (land.status !== "PENDING_APPROVAL") throw badRequest("Only pending requests can be approved.");
@@ -118,6 +121,7 @@ export async function approveLand(input: { landId: string; authorityId: string }
   });
 
   return LandModel.findOne({ landId: input.landId });
+  });
 }
 
 export async function rejectLand(input: { landId: string; authorityId: string; reason?: string }) {

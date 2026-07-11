@@ -48,6 +48,7 @@ export async function createChallenge(input: {
     sellerWallet: land.ownerWallet,
     nonce,
     nonceSalt,
+    agreedPrice: land.salePrice,
     status: "PENDING",
     messages: [
       {
@@ -167,6 +168,7 @@ export async function verifyChallenge(input: { challengeId: string; buyerId: str
 
   let semanticOk = true;
   const signals = proofDoc.publicSignals;
+  if (land.status !== "LISTED_FOR_SALE" || !land.forSale) { semanticOk = false; notes.push("Land is no longer listed for sale."); }
   if (signals[1] !== landIdToField(land.landId)) { semanticOk = false; notes.push("Proof is for a different land."); }
   if (signals[2] !== land.merkleRoot) { semanticOk = false; notes.push("Merkle root is stale — registry changed since proof."); }
   if (signals[3] !== challenge.nonce) { semanticOk = false; notes.push("Challenge nonce mismatch — possible replay."); }

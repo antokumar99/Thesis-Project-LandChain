@@ -161,13 +161,25 @@ export async function generateProof(input: {
   return proofDoc;
 }
 
+/** Caller must be the proof owner, a participant of its challenge, or the authority. */
+async function assertProofAccess(proofDoc: { ownerId: unknown; challengeId?: unknown }, userId: string, role: string) {
+  if (role === "AUTHORITY") return;
+  if (String(proofDoc.ownerId) === userId) return;
+  if (proofDoc.challengeId) {
+    const challenge = await ChallengeModel.findById(proofDoc.challengeId);
+    if (challenge && (String(challenge.buyerId) === userId || String(challenge.sellerId) === userId)) return;
+  }
+  throw forbidden("You are not authorized to access this proof.");
+}
+
 /**
  * Re-verify a stored proof cryptographically (snarkjs) AND semantically
  * (public signals must match the current registry state).
  */
-export async function verifyProofRecord(input: { proofId: string; verifierId: string }) {
+export async function verifyProofRecord(input: { proofId: string; verifierId: string; verifierRole: string }) {
   const proofDoc = await ProofModel.findById(input.proofId);
   if (!proofDoc) throw notFound("Proof not found.");
+  await assertProofAccess(proofDoc, input.verifierId, input.verifierRole);
 
   const circuit = proofDoc.circuit as CircuitName;
   const cryptographicOk = await verifyWithCircuit(circuit, proofDoc.proof, proofDoc.publicSignals);
@@ -236,8 +248,9 @@ export async function listProofs(input: { userId: string; role: string; landId?:
   return ProofModel.find(query).sort({ createdAt: -1 });
 }
 
-export async function getProof(proofId: string) {
+export async function getProof(proofId: string, userId: string, role: string) {
   const proofDoc = await ProofModel.findById(proofId);
   if (!proofDoc) throw notFound("Proof not found.");
+  await assertProofAccess(proofDoc, userId, role);
   return proofDoc;
 }

@@ -65,6 +65,17 @@ export async function registerLandOnChain(
   if (!registry) return fallback;
 
   try {
+    // A land that was sold and is now being re-approved already has an
+    // on-chain record; registerLand would revert with LAND_EXISTS and the new
+    // root would silently never be anchored. In that case anchor the root via
+    // updateMerkleRoot instead.
+    const existing = await registry.lands(landHash(landId));
+    if (existing.exists) {
+      const tx = await registry.updateMerkleRoot(toBytes32(root));
+      const receipt = await tx.wait();
+      return receipt.hash;
+    }
+
     const tx = await registry.registerLand(landHash(landId), toAddress(ownerWallet), cid, toBytes32(root), landIdField);
     const receipt = await tx.wait();
     return receipt.hash;

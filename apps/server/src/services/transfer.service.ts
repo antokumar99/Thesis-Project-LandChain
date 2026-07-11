@@ -3,11 +3,13 @@ import { LandModel } from "../models/Land.model";
 import { MerkleRootModel } from "../models/MerkleRoot.model";
 import { ProofModel } from "../models/Proof.model";
 import { TransactionModel } from "../models/Transaction.model";
-import { areaSaltField, landIdToField, secretToField } from "../utils/field.util";
+import { areaSaltField, buyerBoundChallenge, landIdToField, secretToField } from "../utils/field.util";
 import { deterministicTxHash } from "../utils/hash.util";
 import { poseidonHash2 } from "./poseidon.service";
 import { rebuildRegistryTree } from "./merkle.service";
 import { transferLandOnChain, updateRootOnChain } from "./blockchain.service";
+import { verifyWithCircuit } from "./zk.service";
+import { withRegistryLock } from "../utils/lock.util";
 import type { Groth16Proof } from "../types/proof.types";
 import { badRequest, notFound } from "../utils/errors.util";
 
@@ -29,6 +31,8 @@ export async function buyListedLand(input: {
   buyerWallet: string;
   newOwnerSecret: string;
 }) {
+  // Serialized with approvals: both mutate the registry tree.
+  return withRegistryLock(async () => {
   const land = await LandModel.findOne({ landId: input.landId });
   if (!land) throw notFound("Land not found.");
   if (!land.forSale || land.status !== "LISTED_FOR_SALE") throw badRequest("Land is not listed for sale.");
@@ -66,6 +70,37 @@ export async function buyListedLand(input: {
     throw badRequest("The verified challenge has no usable seller proof. Please re-run the challenge.");
   }
 
+  // ---- Buy-time re-verification -------------------------------------------
+  // The on-chain contract enforces all of this when a chain is configured,
+  // but offline mode must not be weaker: re-check the proof cryptographically
+  // and semantically at the moment of purchase, not just at challenge time.
+  if (sellerProof.usedForTransferAt) {
+    throw badRequest("This ownership proof was already used for a transfer. Please re-run the challenge.");
+  }
+  const signals = sellerProof.publicSignals as string[];
+  if (signals[1] !== landIdToField(input.landId)) {
+    throw badRequest("The seller's proof is bound to a different land. Please re-run the challenge.");
+  }
+  const latestRoot = await MerkleRootModel.findOne().sort({ createdAt: -1 });
+  if (!latestRoot || signals[2] !== latestRoot.root) {
+    throw badRequest(
+      "The registry has changed since the challenge was verified, so the seller's proof is stale. Please re-run the challenge."
+    );
+  }
+  if (signals[3] !== buyerBoundChallenge(input.buyerWallet, verifiedChallenge.nonceSalt)) {
+    throw badRequest("The seller's proof is not bound to your wallet. Please re-run the challenge.");
+  }
+  const proofOk = await verifyWithCircuit("challengeProof", sellerProof.proof, signals);
+  if (!proofOk) throw badRequest("The seller's proof failed cryptographic verification. Purchase aborted.");
+
+  // Price agreed at challenge time must still be the listed price.
+  if (verifiedChallenge.agreedPrice != null && land.salePrice !== verifiedChallenge.agreedPrice) {
+    throw badRequest(
+      `The sale price changed after your challenge was verified (agreed: ${verifiedChallenge.agreedPrice}, now: ${land.salePrice}). Please re-run the challenge.`
+    );
+  }
+  // --------------------------------------------------------------------------
+
   const fromOwnerId = land.ownerId;
   const fromOwnerWallet = land.ownerWallet;
   const salePrice = land.salePrice;
@@ -77,6 +112,10 @@ export async function buyListedLand(input: {
     sellerProof.proof as Groth16Proof,
     sellerProof.publicSignals
   );
+
+  // The proof is consumed by this transfer (single-use, like the on-chain nullifier).
+  sellerProof.usedForTransferAt = new Date();
+  await sellerProof.save();
 
   // Re-commit the land to the buyer's fresh secret.
   const landIdField = landIdToField(input.landId);
@@ -144,4 +183,5 @@ export async function buyListedLand(input: {
   });
 
   return { land: await LandModel.findOne({ landId: input.landId }), transaction, salePrice, fromOwnerId };
+  });
 }
