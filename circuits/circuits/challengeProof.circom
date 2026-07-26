@@ -49,4 +49,4 @@ template ChallengeProof(levels) {
   responseNullifier <== responseHasher.out;
 }
 
-component main { public [landIdField, merkleRoot, challenge] } = ChallengeProof(10);
+component main { public [landIdField, merkleRoot, challenge] } = ChallengeProof(20);

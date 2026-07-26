@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "description": "LandChain zero-knowledge circuits: commitment opening, registry membership, challenge-response ownership, and area range proofs.",
   "scripts": {
-    "compile": "circom circuits/commitmentProof.circom --r1cs --wasm --sym -o build && circom circuits/landOwnership.circom --r1cs --wasm --sym -o build && circom circuits/challengeProof.circom --r1cs --wasm --sym -o build && circom circuits/areaRange.circom --r1cs --wasm --sym -o build",
+    "compile": "circom circuits/commitmentProof.circom --r1cs --wasm --sym --O2 -o build && circom circuits/landOwnership.circom --r1cs --wasm --sym --O2 -o build && circom circuits/challengeProof.circom --r1cs --wasm --sym --O2 -o build && circom circuits/areaRange.circom --r1cs --wasm --sym --O2 -o build && circom circuits/rootTransition.circom --r1cs --wasm --sym --O2 -o build",
     "setup": "node scripts/setup.js",
-    "e2e": "node scripts/e2e.js"
+    "e2e": "node scripts/e2e.js",
+    "benchmark": "node scripts/benchmark.js",
+    "benchmark:scaling": "node scripts/scalingBenchmark.js"
   },
   "keywords": [],
   "author": "",

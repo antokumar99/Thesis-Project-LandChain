@@ -1,0 +1,61 @@
+{
+  "runs": 3,
+  "generatedAt": "2026-07-20T21:08:04.010Z",
+  "results": [
+    {
+      "circuit": "commitmentProof",
+      "constraints": "240",
+      "proveAvgMs": "233",
+      "proveMinMs": "211",
+      "proveMaxMs": "256",
+      "verifyAvgMs": "30.0",
+      "proofBytes": 725,
+      "wasmKb": "1706.3",
+      "zkeyKb": "134.3"
+    },
+    {
+      "circuit": "landOwnership",
+      "constraints": "5617",
+      "proveAvgMs": "1045",
+      "proveMinMs": "949",
+      "proveMaxMs": "1134",
+      "verifyAvgMs": "27.6",
+      "proofBytes": 725,
+      "wasmKb": "1747.7",
+      "zkeyKb": "3234.2"
+    },
+    {
+      "circuit": "challengeProof",
+      "constraints": "5620",
+      "proveAvgMs": "991",
+      "proveMinMs": "944",
+      "proveMaxMs": "1019",
+      "verifyAvgMs": "26.5",
+      "proofBytes": 722,
+      "wasmKb": "1747.7",
+      "zkeyKb": "3236.4"
+    },
+    {
+      "circuit": "areaRange",
+      "constraints": "432",
+      "proveAvgMs": "311",
+      "proveMinMs": "219",
+      "proveMaxMs": "476",
+      "verifyAvgMs": "29.3",
+      "proofBytes": 723,
+      "wasmKb": "1710.8",
+      "zkeyKb": "250.8"
+    },
+    {
+      "circuit": "rootTransition",
+      "constraints": "9800",
+      "proveAvgMs": "1527",
+      "proveMinMs": "1513",
+      "proveMaxMs": "1535",
+      "verifyAvgMs": "30.2",
+      "proofBytes": 725,
+      "wasmKb": "1786.8",
+      "zkeyKb": "5761.2"
+    }
+  ]
+}

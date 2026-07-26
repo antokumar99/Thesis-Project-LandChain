@@ -5,7 +5,7 @@ Four circom circuits — four distinct applications of zero-knowledge proofs. Al
 | Circuit | Private inputs | Public signals (snarkjs order) | Proves |
 |---------|----------------|--------------------------------|--------|
 | `commitmentProof` | ownerSecret | landIdField, commitment | Knowledge of the secret behind a land's commitment. |
-| `landOwnership` | landIdField, ownerSecret, Merkle path | nullifier, merkleRoot | Ownership of *some* registry land (anonymous membership, depth-10 tree). |
+| `landOwnership` | landIdField, ownerSecret, Merkle path | nullifier, merkleRoot | Ownership of *some* registry land (anonymous membership, depth-20 tree). |
 | `challengeProof` | ownerSecret, Merkle path | responseNullifier, landIdField, merkleRoot, challenge | Current ownership of a specific land bound to a buyer's one-time nonce (replay-proof). |
 | `areaRange` | areaValue, areaSalt | areaCommitment, minArea | Committed area ≥ minArea, exact area private. |
 

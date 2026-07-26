@@ -56,4 +56,4 @@ template LandOwnership(levels) {
   nullifier <== nullifierHasher.out;
 }
 
-component main { public [merkleRoot] } = LandOwnership(10);
+component main { public [merkleRoot] } = LandOwnership(20);

@@ -1,0 +1,96 @@
+{
+  "runs": 2,
+  "generatedAt": "2026-07-20T21:20:04.193Z",
+  "results": [
+    {
+      "circuit": "challengeProof",
+      "depth": 10,
+      "capacity": 1024,
+      "constraints": 3170,
+      "proveAvgMs": 714,
+      "verifyAvgMs": 32.1,
+      "zkeyMb": 1.75
+    },
+    {
+      "circuit": "challengeProof",
+      "depth": 15,
+      "capacity": 32768,
+      "constraints": 4395,
+      "proveAvgMs": 893,
+      "verifyAvgMs": 25.9,
+      "zkeyMb": 2.58
+    },
+    {
+      "circuit": "challengeProof",
+      "depth": 20,
+      "capacity": 1048576,
+      "constraints": 5620,
+      "proveAvgMs": 1272,
+      "verifyAvgMs": 36.7,
+      "zkeyMb": 3.16
+    },
+    {
+      "circuit": "challengeProof",
+      "depth": 25,
+      "capacity": 33554432,
+      "constraints": 6845,
+      "proveAvgMs": 1010,
+      "verifyAvgMs": 19.8,
+      "zkeyMb": 3.74
+    },
+    {
+      "circuit": "challengeProof",
+      "depth": 30,
+      "capacity": 1073741824,
+      "constraints": 8070,
+      "proveAvgMs": 1063,
+      "verifyAvgMs": 22.1,
+      "zkeyMb": 4.32
+    },
+    {
+      "circuit": "rootTransition",
+      "depth": 10,
+      "capacity": 1024,
+      "constraints": 4900,
+      "proveAvgMs": 777,
+      "verifyAvgMs": 19.3,
+      "zkeyMb": 2.81
+    },
+    {
+      "circuit": "rootTransition",
+      "depth": 15,
+      "capacity": 32768,
+      "constraints": 7350,
+      "proveAvgMs": 1052,
+      "verifyAvgMs": 19.8,
+      "zkeyMb": 3.97
+    },
+    {
+      "circuit": "rootTransition",
+      "depth": 20,
+      "capacity": 1048576,
+      "constraints": 9800,
+      "proveAvgMs": 1684,
+      "verifyAvgMs": 40.7,
+      "zkeyMb": 5.63
+    },
+    {
+      "circuit": "rootTransition",
+      "depth": 25,
+      "capacity": 33554432,
+      "constraints": 12250,
+      "proveAvgMs": 2693,
+      "verifyAvgMs": 23.1,
+      "zkeyMb": 6.78
+    },
+    {
+      "circuit": "rootTransition",
+      "depth": 30,
+      "capacity": 1073741824,
+      "constraints": 14700,
+      "proveAvgMs": 2254,
+      "verifyAvgMs": 32.6,
+      "zkeyMb": 7.94
+    }
+  ]
+}

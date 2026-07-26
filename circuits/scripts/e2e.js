@@ -1,5 +1,5 @@
 /**
- * End-to-end check for all four LandChain circuits:
+ * End-to-end check for all five LandChain circuits:
  * builds a Poseidon Merkle tree, generates a Groth16 proof per circuit with
  * snarkjs, verifies it against the exported verification key, and prints the
  * labeled public signals.
@@ -11,7 +11,7 @@ const fs = require("fs");
 const snarkjs = require("snarkjs");
 const { buildPoseidon } = require("circomlibjs");
 
-const DEPTH = 10;
+const DEPTH = 20;
 const ROOT = path.resolve(__dirname, "..");
 
 function artifact(circuit) {
@@ -91,7 +91,22 @@ async function main() {
     ["areaCommitment", "minArea"]
   );
 
-  console.log("\nAll four circuits proved and verified successfully.");
+  // Root transition: inserting our commitment at leaf 3 turned the tree
+  // whose leaf 3 was empty (root = oldRoot) into the tree above (merkleRoot).
+  let oldNode = "0";
+  index = leafIndex;
+  for (let level = 0; level < DEPTH; level++) {
+    oldNode = index % 2 === 0 ? H(oldNode, pathElements[level]) : H(pathElements[level], oldNode);
+    index = Math.floor(index / 2);
+  }
+  const transitionSignals = await proveAndVerify(
+    "rootTransition",
+    { pathElements, pathIndices, leafBefore: "0", leafAfter: commitment, oldRoot: oldNode, newRoot: merkleRoot },
+    ["leafBefore", "leafAfter", "oldRoot", "newRoot"]
+  );
+  if (transitionSignals.publicSignals[3] !== merkleRoot) throw new Error("rootTransition newRoot mismatch");
+
+  console.log("\nAll five circuits proved and verified successfully.");
   process.exit(0);
 }
 
