@@ -7,7 +7,8 @@ export async function buyLandController(req: Request, res: Response): Promise<vo
     landId: String(req.body.landId),
     buyerId: req.user!.id,
     buyerWallet: req.user!.walletAddress,
-    newOwnerSecret: String(req.body.newOwnerSecret)
+    newLandCommitment: String(req.body.newLandCommitment),
+    newAreaCommitment: String(req.body.newAreaCommitment)
   });
   ok(res, result, "Land purchased. Ownership transferred and re-committed to your secret.");
 }

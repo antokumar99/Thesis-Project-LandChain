@@ -46,7 +46,8 @@ export async function respondChallengeController(req: Request, res: Response): P
     challengeId: String(req.params.challengeId),
     sellerId: req.user!.id,
     sellerWallet: req.user!.walletAddress,
-    ownerSecret: String(req.body.ownerSecret)
+    proof: req.body.proof,
+    publicSignals: req.body.publicSignals
   });
   ok(res, result, "Zero-knowledge ownership proof submitted to the buyer.");
 }

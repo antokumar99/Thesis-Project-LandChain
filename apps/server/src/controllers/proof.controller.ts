@@ -1,20 +1,20 @@
 import type { Request, Response } from "express";
 import { created, ok } from "../utils/response.util";
-import { generateProof, getProof, listProofs, verifyProofRecord } from "../services/proof.service";
+import { getProof, listProofs, submitProof, verifyProofRecord } from "../services/proof.service";
 import { artifactsStatus } from "../services/zk.service";
 import { PROOF_TYPE_DESCRIPTIONS } from "../constants/proofTypes";
 
-export async function generateProofController(req: Request, res: Response): Promise<void> {
-  const result = await generateProof({
+export async function submitProofController(req: Request, res: Response): Promise<void> {
+  const result = await submitProof({
     userId: req.user!.id,
     userWallet: req.user!.walletAddress,
     landId: String(req.body.landId),
-    ownerSecret: String(req.body.ownerSecret),
     proofType: req.body.proofType,
-    challengeId: req.body.challengeId ? String(req.body.challengeId) : undefined,
-    minArea: req.body.minArea !== undefined ? Number(req.body.minArea) : undefined
+    proof: req.body.proof,
+    publicSignals: req.body.publicSignals,
+    challengeId: req.body.challengeId ? String(req.body.challengeId) : undefined
   });
-  created(res, result, "Zero-knowledge proof generated.");
+  created(res, result, "Zero-knowledge proof verified and recorded.");
 }
 
 export async function verifyProofController(req: Request, res: Response): Promise<void> {
