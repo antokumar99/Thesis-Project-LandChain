@@ -1,3 +1,8 @@
+// Ops helper: one-time root bootstrap for a freshly deployed registry that is
+// being pointed at an existing off-chain registry state. Regular root updates
+// MUST go through updateMerkleRoot with a Groth16 transition proof (the
+// backend does this automatically on approval/transfer); this script cannot
+// produce such a proof and therefore only supports the bootstrap case.
 import { network } from "hardhat";
 
 const { ethers } = await network.create();
@@ -9,7 +14,7 @@ if (!registryAddress || !root) {
 }
 
 const registry = await ethers.getContractAt("LandRegistry", registryAddress);
-const tx = await registry.updateMerkleRoot(root);
+const tx = await registry.bootstrapRoot(root);
 await tx.wait();
 
-console.log(`Merkle root updated: ${root}`);
+console.log(`Merkle root bootstrapped: ${root}`);
