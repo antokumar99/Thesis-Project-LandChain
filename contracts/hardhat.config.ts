@@ -1,3 +1,6 @@
+// Load contracts/.env so configVariable() can resolve SEPOLIA_RPC_URL /
+// SEPOLIA_PRIVATE_KEY from it (Hardhat 3 only reads real env vars).
+import "dotenv/config";
 import hardhatToolboxMochaEthersPlugin from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 import { configVariable, defineConfig } from "hardhat/config";
 

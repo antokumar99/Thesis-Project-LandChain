@@ -4,16 +4,22 @@ import { network } from "hardhat";
 const { ethers } = await network.create();
 
 describe("Land transfer controls", function () {
-  it("rejects transfers from wallets that do not own the land", async function () {
-    const [authority, owner, buyer, outsider] = await ethers.getSigners();
+  it("rejects transfer submissions from accounts other than the authority", async function () {
+    const [authority, , buyer, outsider] = await ethers.getSigners();
     const verifier = await ethers.deployContract("Verifier");
-    const registry = await ethers.deployContract("LandRegistry", [authority.address, await verifier.getAddress()]);
+    const rootVerifier = await ethers.deployContract("RootVerifier");
+    const registry = await ethers.deployContract("LandRegistry", [
+      authority.address,
+      await verifier.getAddress(),
+      await rootVerifier.getAddress()
+    ]);
     const landHash = ethers.id("LAND-002");
-    const root = ethers.keccak256(ethers.toUtf8Bytes("root-2"));
     const salt = ethers.id("salt-2");
 
-    await registry.registerLand(landHash, owner.address, "bafy-demo", root, 7n);
+    await registry.registerLand(landHash, "bafy-demo", 7n);
 
+    // Transfers are relayed by the authority; the seller's Groth16 proof —
+    // not the caller's address — is what authorizes the ownership change.
     await expect(
       registry.connect(outsider).verifyAndTransfer(
         landHash,
@@ -22,8 +28,10 @@ describe("Land transfer controls", function () {
         [1n, 2n],
         [[3n, 4n], [5n, 6n]],
         [7n, 8n],
-        [BigInt(root)]
+        [1n, 2n, 3n, 4n]
       )
-    ).to.be.revertedWith("NOT_AUTHORIZED");
+    )
+      .to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount")
+      .withArgs(outsider.address);
   });
 });
