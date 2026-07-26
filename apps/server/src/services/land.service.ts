@@ -3,25 +3,27 @@ import { MerkleRootModel } from "../models/MerkleRoot.model";
 import { TransactionModel } from "../models/Transaction.model";
 import { UserModel } from "../models/User.model";
 import { deterministicTxHash } from "../utils/hash.util";
-import { areaSaltField, landIdToField, secretToField } from "../utils/field.util";
-import { poseidonHash2 } from "./poseidon.service";
+import { isFieldElement, landIdToField } from "../utils/field.util";
 import { uploadDeedToIpfs } from "./ipfs.service";
-import { nextLeafIndex, rebuildRegistryTree, TREE_CAPACITY } from "./merkle.service";
-import { registerLandOnChain } from "./blockchain.service";
+import { nextLeafIndex, proveRootTransition, rebuildRegistryTree, TREE_CAPACITY } from "./merkle.service";
+import { registerLandOnChain, updateRootOnChain } from "./blockchain.service";
 import { withRegistryLock } from "../utils/lock.util";
 import { badRequest, conflict, forbidden, notFound } from "../utils/errors.util";
 
 /**
- * A user submits a land registration request. The commitment is computed from
- * the owner's secret which is NEVER stored — only the Poseidon commitment is.
- * The land stays PENDING_APPROVAL until the fixed authority approves it.
+ * A user submits a land registration request. The owner secret NEVER leaves
+ * the owner's browser: the client derives the Poseidon commitments locally
+ * and only submits those. The server (and therefore the operator) cannot
+ * link a commitment back to a secret. The land stays PENDING_APPROVAL until
+ * the fixed authority approves it.
  */
 export async function requestLandRegistration(input: {
   landId: string;
   plotNumber: string;
   location: string;
   areaSqm: number;
-  ownerSecret: string;
+  landCommitment: string;
+  areaCommitment: string;
   requestNote?: string;
   deedFile?: Express.Multer.File;
   userId: string;
@@ -30,15 +32,14 @@ export async function requestLandRegistration(input: {
   const existing = await LandModel.findOne({ landId: input.landId });
   if (existing) throw conflict("A land with this ID already exists.");
   if (!Number.isFinite(input.areaSqm) || input.areaSqm <= 0) throw badRequest("areaSqm must be a positive number.");
+  if (!isFieldElement(input.landCommitment)) throw badRequest("landCommitment must be a decimal field element.");
+  if (!isFieldElement(input.areaCommitment)) throw badRequest("areaCommitment must be a decimal field element.");
+  const duplicateCommitment = await LandModel.findOne({ landCommitment: input.landCommitment });
+  if (duplicateCommitment) throw conflict("This commitment is already registered.");
 
   const { cid, deedHash } = await uploadDeedToIpfs(input.deedFile);
 
-  const landIdField = landIdToField(input.landId);
-  const secretField = secretToField(input.landId, input.ownerSecret);
-  const landCommitment = await poseidonHash2(landIdField, secretField);
-  const areaSalt = areaSaltField(input.landId, input.ownerSecret);
-  const areaCommitment = await poseidonHash2(String(Math.floor(input.areaSqm)), areaSalt);
-
+  const { landCommitment, areaCommitment } = input;
   const land = await LandModel.create({
     landId: input.landId,
     plotNumber: input.plotNumber,
@@ -95,19 +96,25 @@ export async function approveLand(input: { landId: string; authorityId: string }
   await land.save();
 
   const snapshot = await rebuildRegistryTree();
-  const blockchainTxHash = await registerLandOnChain(
-    land.landId,
-    land.ownerWallet,
-    land.ipfsCID,
-    snapshot.root,
-    landIdToField(land.landId)
-  );
+
+  // Prove on-chain that the new root is EXACTLY the old root with this
+  // land's commitment inserted at its assigned (previously empty) leaf.
+  const transition = await proveRootTransition({
+    path: snapshot.pathFor(leafIndex),
+    leafBefore: "0",
+    leafAfter: land.landCommitment,
+    newRoot: snapshot.root
+  });
+
+  const registerTxHash = await registerLandOnChain(land.landId, land.ipfsCID, landIdToField(land.landId));
+  const rootTxHash = await updateRootOnChain(snapshot.root, transition);
+  const blockchainTxHash = registerTxHash ?? rootTxHash;
 
   await MerkleRootModel.create({
     root: snapshot.root,
     leafCount: snapshot.leafCount,
     landIds: (await LandModel.find({ leafIndex: { $ne: null } }).select("landId")).map((item) => item.landId),
-    transactionHash: blockchainTxHash,
+    transactionHash: rootTxHash,
     createdBy: input.authorityId
   });
 

@@ -4,6 +4,7 @@ import { deterministicTxHash, landHash } from "../utils/hash.util";
 import { logger } from "../utils/logger.util";
 import { badRequest } from "../utils/errors.util";
 import type { Groth16Proof } from "../types/proof.types";
+import type { RootTransition } from "./merkle.service";
 
 /**
  * Normalise a wallet string into a checksummed address the contract layer can
@@ -38,13 +39,26 @@ function toBytes32(value: string): string {
   return `0x${BigInt(value).toString(16).padStart(64, "0")}`;
 }
 
-export async function updateRootOnChain(root: string): Promise<string> {
+/** Format a root transition for the contract's TransitionProof struct. */
+function toTransitionArgs(transition: RootTransition) {
+  return {
+    ...toProofArgs(transition.proof),
+    signals: transition.publicSignals
+  };
+}
+
+/**
+ * Anchors a new registry root on-chain. The contract only accepts it together
+ * with a Groth16 proof that the root is a single-leaf update of the
+ * previously anchored root, so the chain never trusts our tree computation.
+ */
+export async function updateRootOnChain(root: string, transition: RootTransition): Promise<string> {
   const registry = getRegistryContract();
   const fallback = deterministicTxHash(`root:${root}`);
   if (!registry) return fallback;
 
   try {
-    const tx = await registry.updateMerkleRoot(toBytes32(root));
+    const tx = await registry.updateMerkleRoot(toBytes32(root), toTransitionArgs(transition));
     const receipt = await tx.wait();
     return receipt.hash;
   } catch (error) {
@@ -53,30 +67,29 @@ export async function updateRootOnChain(root: string): Promise<string> {
   }
 }
 
+/**
+ * Records the land parcel on-chain (no root anchoring — that happens through
+ * updateRootOnChain with a transition proof). No owner identity is sent: the
+ * on-chain record is deliberately identity-free, so ownership exists only as
+ * a commitment inside the anchored Merkle tree. Re-approvals of an existing
+ * record are a no-op here.
+ */
 export async function registerLandOnChain(
   landId: string,
-  ownerWallet: string,
   cid: string,
-  root: string,
   landIdField: string
-): Promise<string> {
+): Promise<string | null> {
   const registry = getRegistryContract();
-  const fallback = deterministicTxHash(`register:${landId}:${ownerWallet}:${root}`);
+  const fallback = deterministicTxHash(`register:${landId}`);
   if (!registry) return fallback;
 
   try {
     // A land that was sold and is now being re-approved already has an
-    // on-chain record; registerLand would revert with LAND_EXISTS and the new
-    // root would silently never be anchored. In that case anchor the root via
-    // updateMerkleRoot instead.
+    // on-chain record; registerLand would revert with LAND_EXISTS.
     const existing = await registry.lands(landHash(landId));
-    if (existing.exists) {
-      const tx = await registry.updateMerkleRoot(toBytes32(root));
-      const receipt = await tx.wait();
-      return receipt.hash;
-    }
+    if (existing.exists) return null;
 
-    const tx = await registry.registerLand(landHash(landId), toAddress(ownerWallet), cid, toBytes32(root), landIdField);
+    const tx = await registry.registerLand(landHash(landId), cid, landIdField);
     const receipt = await tx.wait();
     return receipt.hash;
   } catch (error) {

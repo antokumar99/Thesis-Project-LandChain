@@ -5,7 +5,7 @@ import * as snarkjs from "snarkjs";
 import { env } from "../config/env";
 import { badRequest } from "../utils/errors.util";
 
-export type CircuitName = "commitmentProof" | "landOwnership" | "challengeProof" | "areaRange";
+export type CircuitName = "commitmentProof" | "landOwnership" | "challengeProof" | "areaRange" | "rootTransition";
 
 type CircuitConfig = {
   wasm: string;
@@ -20,7 +20,8 @@ function circuitConfig(name: CircuitName): CircuitConfig {
     commitmentProof: ["landIdField", "commitment"],
     landOwnership: ["nullifier", "merkleRoot"],
     challengeProof: ["responseNullifier", "landIdField", "merkleRoot", "challenge"],
-    areaRange: ["areaCommitment", "minArea"]
+    areaRange: ["areaCommitment", "minArea"],
+    rootTransition: ["leafBefore", "leafAfter", "oldRoot", "newRoot"]
   };
   return {
     wasm: path.join(env.circuitsDir, "build", `${name}_js`, `${name}.wasm`),
@@ -36,7 +37,7 @@ export function circuitReady(name: CircuitName): boolean {
 }
 
 export function artifactsStatus() {
-  const names: CircuitName[] = ["commitmentProof", "landOwnership", "challengeProof", "areaRange"];
+  const names: CircuitName[] = ["commitmentProof", "landOwnership", "challengeProof", "areaRange", "rootTransition"];
   return names.map((name) => {
     const config = circuitConfig(name);
     return {

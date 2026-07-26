@@ -1,8 +1,10 @@
 import { LandModel } from "../models/Land.model";
 import { poseidonHash2 } from "./poseidon.service";
+import { proveWithCircuit } from "./zk.service";
+import type { Groth16Proof } from "../types/proof.types";
 
 /** Must match the `levels` parameter of the compiled circom circuits. */
-export const TREE_DEPTH = 10;
+export const TREE_DEPTH = 20;
 export const TREE_CAPACITY = 2 ** TREE_DEPTH;
 const ZERO_LEAF = "0";
 
@@ -101,4 +103,52 @@ export async function rebuildRegistryTree(): Promise<MerkleSnapshot> {
 export async function nextLeafIndex(): Promise<number> {
   const last = await LandModel.findOne(treeLandFilter()).sort({ leafIndex: -1 }).select("leafIndex");
   return last?.leafIndex != null ? (last.leafIndex as number) + 1 : 0;
+}
+
+/** Fold a Merkle path bottom-up to compute the root a given leaf implies. */
+export async function computeRootFromPath(leaf: string, path: MerklePath): Promise<string> {
+  let node = leaf;
+  for (let level = 0; level < TREE_DEPTH; level++) {
+    node =
+      path.pathIndices[level] === 0
+        ? await poseidonHash2(node, path.pathElements[level])
+        : await poseidonHash2(path.pathElements[level], node);
+  }
+  return node;
+}
+
+export type RootTransition = {
+  proof: Groth16Proof;
+  /** [leafBefore, leafAfter, oldRoot, newRoot] as decimal field strings. */
+  publicSignals: string[];
+};
+
+/**
+ * Groth16 proof that the registry root changed in exactly ONE leaf: the leaf
+ * on `path` went from `leafBefore` to `leafAfter`, turning the previously
+ * anchored root into `newRoot`. The on-chain LandRegistry verifies this proof
+ * for every root update, so it never trusts our off-chain tree computation.
+ */
+export async function proveRootTransition(input: {
+  path: MerklePath;
+  leafBefore: string;
+  leafAfter: string;
+  newRoot: string;
+}): Promise<RootTransition> {
+  const oldRoot = await computeRootFromPath(input.leafBefore, input.path);
+  const expectedNewRoot = await computeRootFromPath(input.leafAfter, input.path);
+  if (expectedNewRoot !== input.newRoot) {
+    throw new Error("Root transition mismatch: the rebuilt tree differs from a single-leaf update.");
+  }
+
+  const proved = await proveWithCircuit("rootTransition", {
+    pathElements: input.path.pathElements,
+    pathIndices: input.path.pathIndices,
+    leafBefore: input.leafBefore,
+    leafAfter: input.leafAfter,
+    oldRoot,
+    newRoot: input.newRoot
+  });
+
+  return { proof: proved.proof as Groth16Proof, publicSignals: proved.publicSignals };
 }

@@ -3,10 +3,9 @@ import { LandModel } from "../models/Land.model";
 import { MerkleRootModel } from "../models/MerkleRoot.model";
 import { ProofModel } from "../models/Proof.model";
 import { TransactionModel } from "../models/Transaction.model";
-import { areaSaltField, buyerBoundChallenge, landIdToField, secretToField } from "../utils/field.util";
+import { buyerBoundChallenge, isFieldElement, landIdToField } from "../utils/field.util";
 import { deterministicTxHash } from "../utils/hash.util";
-import { poseidonHash2 } from "./poseidon.service";
-import { rebuildRegistryTree } from "./merkle.service";
+import { proveRootTransition, rebuildRegistryTree } from "./merkle.service";
 import { transferLandOnChain, updateRootOnChain } from "./blockchain.service";
 import { verifyWithCircuit } from "./zk.service";
 import { withRegistryLock } from "../utils/lock.util";
@@ -18,18 +17,21 @@ import { badRequest, notFound } from "../utils/errors.util";
  * proof between this buyer and the seller — the ZK authenticity handshake is
  * mandatory before money changes hands.
  *
- * The buyer supplies a fresh secret; the land is re-committed to that secret
- * and ownership moves to the buyer. The land then leaves the active registry
- * tree and becomes a PENDING_APPROVAL re-registration request routed to the
- * authority. The previous owner immediately loses the ability to prove
- * ownership, and the new owner can only prove ownership (or resell) once the
- * authority has re-registered the land in their name.
+ * The buyer chooses a fresh secret in their browser and submits only the
+ * derived Poseidon commitments — the secret itself never reaches the server.
+ * The land is re-committed to the buyer and ownership moves to them. The land
+ * then leaves the active registry tree and becomes a PENDING_APPROVAL
+ * re-registration request routed to the authority. The previous owner
+ * immediately loses the ability to prove ownership, and the new owner can
+ * only prove ownership (or resell) once the authority has re-registered the
+ * land in their name.
  */
 export async function buyListedLand(input: {
   landId: string;
   buyerId: string;
   buyerWallet: string;
-  newOwnerSecret: string;
+  newLandCommitment: string;
+  newAreaCommitment: string;
 }) {
   // Serialized with approvals: both mutate the registry tree.
   return withRegistryLock(async () => {
@@ -37,9 +39,17 @@ export async function buyListedLand(input: {
   if (!land) throw notFound("Land not found.");
   if (!land.forSale || land.status !== "LISTED_FOR_SALE") throw badRequest("Land is not listed for sale.");
   if (String(land.ownerId) === input.buyerId) throw badRequest("Owner cannot buy their own land.");
-  if (!input.newOwnerSecret || input.newOwnerSecret.length < 8) {
-    throw badRequest("Choose a new owner secret of at least 8 characters.");
+  if (!isFieldElement(input.newLandCommitment)) {
+    throw badRequest("newLandCommitment must be a decimal field element (computed in your browser).");
   }
+  if (!isFieldElement(input.newAreaCommitment)) {
+    throw badRequest("newAreaCommitment must be a decimal field element (computed in your browser).");
+  }
+  if (input.newLandCommitment === land.landCommitment) {
+    throw badRequest("The new commitment must differ from the current one — choose a fresh secret.");
+  }
+  const duplicateCommitment = await LandModel.findOne({ landCommitment: input.newLandCommitment });
+  if (duplicateCommitment) throw badRequest("This commitment is already in use. Choose a different secret.");
 
   const verifiedChallenge = await ChallengeModel.findOne({
     landId: input.landId,
@@ -104,6 +114,9 @@ export async function buyListedLand(input: {
   const fromOwnerId = land.ownerId;
   const fromOwnerWallet = land.ownerWallet;
   const salePrice = land.salePrice;
+  // Captured before re-commitment: needed for the removal transition proof.
+  const previousCommitment = land.landCommitment;
+  const previousLeafIndex = land.leafIndex as number;
 
   const blockchainTxHash = await transferLandOnChain(
     input.landId,
@@ -117,14 +130,9 @@ export async function buyListedLand(input: {
   sellerProof.usedForTransferAt = new Date();
   await sellerProof.save();
 
-  // Re-commit the land to the buyer's fresh secret.
-  const landIdField = landIdToField(input.landId);
-  const newSecretField = secretToField(input.landId, input.newOwnerSecret);
-  land.landCommitment = await poseidonHash2(landIdField, newSecretField);
-  land.areaCommitment = await poseidonHash2(
-    String(land.areaSqm),
-    areaSaltField(input.landId, input.newOwnerSecret)
-  );
+  // Re-commit the land to the buyer's fresh (browser-derived) commitments.
+  land.landCommitment = input.newLandCommitment;
+  land.areaCommitment = input.newAreaCommitment;
   land.ownerId = input.buyerId as never;
   land.ownerWallet = input.buyerWallet.toLowerCase();
   land.forSale = false;
@@ -145,7 +153,15 @@ export async function buyListedLand(input: {
 
   // Rebuild the tree without this land so the previous owner can no longer prove.
   const snapshot = await rebuildRegistryTree();
-  const rootTxHash = await updateRootOnChain(snapshot.root);
+  // Prove on-chain that the new root is EXACTLY the old root with this
+  // land's commitment removed from its leaf (single-leaf transition).
+  const transition = await proveRootTransition({
+    path: snapshot.pathFor(previousLeafIndex),
+    leafBefore: previousCommitment,
+    leafAfter: "0",
+    newRoot: snapshot.root
+  });
+  const rootTxHash = await updateRootOnChain(snapshot.root, transition);
   await MerkleRootModel.create({
     root: snapshot.root,
     leafCount: snapshot.leafCount,

@@ -3,70 +3,72 @@ import { ProofModel } from "../models/Proof.model";
 import { ChallengeModel } from "../models/Challenge.model";
 import { MerkleRootModel } from "../models/MerkleRoot.model";
 import { TransactionModel } from "../models/Transaction.model";
-import { PROOF_TYPE_CIRCUITS, PROOF_TYPES, type ProofType } from "../constants/proofTypes";
-import { areaSaltField, landIdToField, secretToField } from "../utils/field.util";
+import { PROOF_TYPE_CIRCUITS, PROOF_TYPES, PUBLIC_SIGNAL_LABELS, type ProofType } from "../constants/proofTypes";
+import { isFieldElement, landIdToField } from "../utils/field.util";
 import { deterministicTxHash } from "../utils/hash.util";
-import { poseidonHash2 } from "./poseidon.service";
-import { proveWithCircuit, verifyWithCircuit, type CircuitName } from "../services/zk.service";
+import { verifyWithCircuit, type CircuitName } from "../services/zk.service";
+import type { Groth16Proof } from "../types/proof.types";
 import { badRequest, forbidden, notFound } from "../utils/errors.util";
 
-async function assertOwnedLandWithSecret(input: {
-  landId: string;
-  userId: string;
-  ownerSecret: string;
-}) {
-  const land = await LandModel.findOne({ landId: input.landId });
-  if (!land) throw notFound("Land not found.");
-  if (land.status !== "REGISTERED" && land.status !== "LISTED_FOR_SALE") {
-    throw badRequest("Proofs can only be generated for approved lands.");
-  }
-  if (String(land.ownerId) !== input.userId) {
-    throw forbidden("Only the owner can generate a proof for their own land.");
-  }
-
-  const landIdField = landIdToField(input.landId);
-  const secretField = secretToField(input.landId, input.ownerSecret);
-  const commitment = await poseidonHash2(landIdField, secretField);
-  if (commitment !== land.landCommitment) {
-    throw badRequest("Owner secret does not match this land record.");
-  }
-
-  return { land, landIdField, secretField };
+function isGroth16ProofShape(value: unknown): value is Groth16Proof {
+  if (!value || typeof value !== "object") return false;
+  const proof = value as Record<string, unknown>;
+  return Array.isArray(proof.pi_a) && Array.isArray(proof.pi_b) && Array.isArray(proof.pi_c);
 }
 
 /**
- * Generate one of the four supported zero-knowledge proofs. The owner secret
- * is used only to build the witness and is never stored.
+ * Accept and verify a zero-knowledge proof that was GENERATED IN THE OWNER'S
+ * BROWSER. The owner secret never reaches the server: the client builds the
+ * witness locally (snarkjs wasm prover) and submits only {proof,
+ * publicSignals}. The server verifies the proof cryptographically (Groth16)
+ * and semantically (the public signals must bind to this land, the current
+ * registry state, and — for challenge responses — the buyer's nonce) before
+ * persisting it.
  */
-export async function generateProof(input: {
+export async function submitProof(input: {
   userId: string;
   userWallet: string;
   landId: string;
-  ownerSecret: string;
   proofType: ProofType;
+  proof: unknown;
+  publicSignals: unknown;
   challengeId?: string;
-  minArea?: number;
 }) {
-  const { land, landIdField, secretField } = await assertOwnedLandWithSecret(input);
+  if (!Object.values(PROOF_TYPES).includes(input.proofType)) throw badRequest("Unsupported proof type.");
+  if (!isGroth16ProofShape(input.proof)) throw badRequest("proof must be a snarkjs Groth16 proof object.");
+  if (!Array.isArray(input.publicSignals) || !input.publicSignals.every((s) => isFieldElement(s))) {
+    throw badRequest("publicSignals must be an array of decimal field elements.");
+  }
+  const signals = input.publicSignals as string[];
+
+  const land = await LandModel.findOne({ landId: input.landId });
+  if (!land) throw notFound("Land not found.");
+  if (land.status !== "REGISTERED" && land.status !== "LISTED_FOR_SALE") {
+    throw badRequest("Proofs can only be submitted for approved lands.");
+  }
+  if (String(land.ownerId) !== input.userId) {
+    throw forbidden("Only the owner can submit a proof for their own land.");
+  }
+
   const circuit = PROOF_TYPE_CIRCUITS[input.proofType] as CircuitName;
+  const expectedLabels = PUBLIC_SIGNAL_LABELS[input.proofType];
+  if (signals.length !== expectedLabels.length) {
+    throw badRequest(`Expected ${expectedLabels.length} public signals (${expectedLabels.join(", ")}).`);
+  }
 
-  let circuitInput: Record<string, unknown>;
+  // ---- Semantic binding: the proof must be about THIS land and the CURRENT
+  // registry state, otherwise a cryptographically valid proof could be reused
+  // out of context.
   let challengeDoc = null;
-
   switch (input.proofType) {
     case PROOF_TYPES.COMMITMENT_OPENING:
-      circuitInput = { ownerSecret: secretField, landIdField, commitment: land.landCommitment };
+      if (signals[0] !== landIdToField(input.landId)) throw badRequest("Proof is bound to a different land.");
+      if (signals[1] !== land.landCommitment) throw badRequest("Proof does not open this land's commitment.");
       break;
 
     case PROOF_TYPES.REGISTRY_MEMBERSHIP:
-      if (!land.merkleRoot || !land.pathElements?.length) throw badRequest("Land has no Merkle path yet.");
-      circuitInput = {
-        landIdField,
-        ownerSecret: secretField,
-        pathElements: land.pathElements,
-        pathIndices: land.pathIndices,
-        merkleRoot: land.merkleRoot
-      };
+      if (!land.merkleRoot) throw badRequest("Land has no Merkle path yet.");
+      if (signals[1] !== land.merkleRoot) throw badRequest("Proof is for a stale registry root.");
       break;
 
     case PROOF_TYPES.CHALLENGE_RESPONSE: {
@@ -78,46 +80,21 @@ export async function generateProof(input: {
       if (challengeDoc.status !== "PENDING" && challengeDoc.status !== "PROOF_SUBMITTED") {
         throw badRequest(`Challenge is already ${challengeDoc.status.toLowerCase()}.`);
       }
-      if (!land.merkleRoot || !land.pathElements?.length) throw badRequest("Land has no Merkle path yet.");
-      circuitInput = {
-        ownerSecret: secretField,
-        pathElements: land.pathElements,
-        pathIndices: land.pathIndices,
-        landIdField,
-        merkleRoot: land.merkleRoot,
-        challenge: challengeDoc.nonce
-      };
+      if (!land.merkleRoot) throw badRequest("Land has no Merkle path yet.");
+      if (signals[1] !== landIdToField(input.landId)) throw badRequest("Proof is bound to a different land.");
+      if (signals[2] !== land.merkleRoot) throw badRequest("Proof is for a stale registry root.");
+      if (signals[3] !== challengeDoc.nonce) throw badRequest("Proof does not answer this challenge's nonce.");
       break;
     }
 
-    case PROOF_TYPES.AREA_RANGE: {
-      const minArea = Math.floor(Number(input.minArea));
-      if (!Number.isFinite(minArea) || minArea <= 0) throw badRequest("minArea must be a positive number.");
-      circuitInput = {
-        areaValue: String(land.areaSqm),
-        areaSalt: areaSaltField(input.landId, input.ownerSecret),
-        areaCommitment: land.areaCommitment,
-        minArea: String(minArea)
-      };
+    case PROOF_TYPES.AREA_RANGE:
+      if (signals[0] !== land.areaCommitment) throw badRequest("Proof does not open this land's area commitment.");
       break;
-    }
-
-    default:
-      throw badRequest("Unsupported proof type.");
   }
 
-  let proved;
-  try {
-    proved = await proveWithCircuit(circuit, circuitInput);
-  } catch (error) {
-    if (error instanceof Error && /Assert Failed|Error in template/i.test(error.message)) {
-      throw badRequest("The statement is not true for this land, so no proof can be generated.");
-    }
-    throw error;
-  }
-
-  // Sanity: verify our own proof before persisting it.
-  const selfVerified = await verifyWithCircuit(circuit, proved.proof, proved.publicSignals);
+  // ---- Cryptographic verification (snarkjs Groth16, server-held vkey).
+  const cryptographicOk = await verifyWithCircuit(circuit, input.proof, signals);
+  if (!cryptographicOk) throw badRequest("Groth16 verification failed — the proof is not valid.");
 
   const transactionHash = deterministicTxHash(`proof:${input.proofType}:${input.landId}:${input.userWallet}`);
   const proofDoc = await ProofModel.create({
@@ -127,13 +104,13 @@ export async function generateProof(input: {
     ownerId: input.userId,
     ownerWallet: input.userWallet.toLowerCase(),
     challengeId: challengeDoc?._id,
-    proof: proved.proof,
-    publicSignals: proved.publicSignals,
-    publicSignalLabels: proved.publicSignalLabels,
+    proof: input.proof,
+    publicSignals: signals,
+    publicSignalLabels: expectedLabels,
     merkleRoot: land.merkleRoot,
-    verified: selfVerified,
-    verifiedAt: selfVerified ? new Date() : undefined,
-    verificationNote: selfVerified ? "Verified at generation time (snarkjs groth16)." : "Self-verification failed.",
+    verified: true,
+    verifiedAt: new Date(),
+    verificationNote: "Client-generated proof verified on submission (snarkjs groth16 + semantic binding).",
     transactionHash
   });
 
@@ -154,8 +131,8 @@ export async function generateProof(input: {
     fromOwner: input.userWallet.toLowerCase(),
     transactionType: "PROOF_GENERATED",
     blockchainTxHash: transactionHash,
-    status: selfVerified ? "VERIFIED" : "FAILED",
-    detail: `${input.proofType} proof generated (circuit ${circuit}).`
+    status: "VERIFIED",
+    detail: `${input.proofType} proof submitted from the owner's browser (circuit ${circuit}).`
   });
 
   return proofDoc;

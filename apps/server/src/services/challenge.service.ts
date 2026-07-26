@@ -7,7 +7,7 @@ import { PROOF_TYPES } from "../constants/proofTypes";
 import { buyerBoundChallenge, landIdToField, randomChallengeSalt } from "../utils/field.util";
 import { deterministicTxHash } from "../utils/hash.util";
 import { verifyWithCircuit, type CircuitName } from "./zk.service";
-import { generateProof } from "./proof.service";
+import { submitProof } from "./proof.service";
 import { badRequest, forbidden, notFound } from "../utils/errors.util";
 
 /**
@@ -115,12 +115,18 @@ export async function addChallengeMessage(input: { challengeId: string; userId: 
   return challenge;
 }
 
-/** Seller answers the challenge by generating a nonce-bound ZK proof. */
+/**
+ * Seller answers the challenge with a nonce-bound ZK proof GENERATED IN
+ * THEIR BROWSER — the owner secret never reaches the server. The proof is
+ * verified (cryptographically and against this challenge's nonce, land and
+ * the current registry root) before being attached to the challenge.
+ */
 export async function respondToChallenge(input: {
   challengeId: string;
   sellerId: string;
   sellerWallet: string;
-  ownerSecret: string;
+  proof: unknown;
+  publicSignals: unknown;
 }) {
   const challenge = await ChallengeModel.findById(input.challengeId);
   if (!challenge) throw notFound("Challenge not found.");
@@ -129,12 +135,13 @@ export async function respondToChallenge(input: {
     throw badRequest(`Challenge is already ${challenge.status.toLowerCase()}.`);
   }
 
-  const proofDoc = await generateProof({
+  const proofDoc = await submitProof({
     userId: input.sellerId,
     userWallet: input.sellerWallet,
     landId: challenge.landId,
-    ownerSecret: input.ownerSecret,
     proofType: PROOF_TYPES.CHALLENGE_RESPONSE,
+    proof: input.proof,
+    publicSignals: input.publicSignals,
     challengeId: input.challengeId
   });
 

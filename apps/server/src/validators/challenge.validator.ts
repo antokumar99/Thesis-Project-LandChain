@@ -3,7 +3,7 @@ export function validateChallengeCreation(body: Record<string, unknown>): string
 }
 
 export function validateChallengeResponse(body: Record<string, unknown>): string[] {
-  return ["ownerSecret"].filter((key) => !body[key]);
+  return ["proof", "publicSignals"].filter((key) => !body[key]);
 }
 
 export function validateChallengeMessage(body: Record<string, unknown>): string[] {
