@@ -8,6 +8,8 @@ import { challengeRoutes } from "./routes/challenge.routes";
 import { transferRoutes } from "./routes/transfer.routes";
 import { ipfsRoutes } from "./routes/ipfs.routes";
 import { transactionRoutes } from "./routes/transaction.routes";
+import { explorerRoutes } from "./routes/explorer.routes";
+import { zkRoutes } from "./routes/zk.routes";
 import { errorMiddleware } from "./middlewares/error.middleware";
 import { getDbStatus } from "./config/db";
 
@@ -24,4 +26,6 @@ app.use("/api/challenges", challengeRoutes);
 app.use("/api/transfers", transferRoutes);
 app.use("/api/ipfs", ipfsRoutes);
 app.use("/api/transactions", transactionRoutes);
+app.use("/api/explorer", explorerRoutes);
+app.use("/api/zk", zkRoutes);
 app.use(errorMiddleware);
