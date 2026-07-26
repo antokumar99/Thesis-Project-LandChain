@@ -8,7 +8,7 @@ import { ethers } from "ethers";
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const circuitsDir = path.resolve(testDir, "../../circuits");
 
-export const TREE_DEPTH = 10;
+export const TREE_DEPTH = 20;
 
 /** BN254 scalar field prime used by circom/snarkjs. */
 export const SNARK_SCALAR_FIELD =
@@ -25,6 +25,16 @@ export type OnChainProof = {
   rootBytes32: string;
   landIdField: bigint;
   challengeSalt: string;
+};
+
+/** Root-transition proof formatted for LandRegistry.updateMerkleRoot. */
+export type OnChainTransition = {
+  a: [bigint, bigint];
+  b: [[bigint, bigint], [bigint, bigint]];
+  c: [bigint, bigint];
+  /** [leafBefore, leafAfter, oldRoot, newRoot] */
+  signals: [bigint, bigint, bigint, bigint];
+  newRootBytes32: string;
 };
 
 /**
@@ -124,6 +134,88 @@ export async function generateChallengeProof(buyer: string, salt?: string): Prom
     };
     fs.writeFileSync(cacheFile, JSON.stringify({ key: cacheKey, value: v }, null, 2));
   }
+
+  return result;
+}
+
+/**
+ * Generates a REAL root-transition Groth16 proof for inserting the test
+ * commitment (the one generateChallengeProof places at leaf 0) into the empty
+ * depth-10 tree. Public signals: [leafBefore, leafAfter, oldRoot, newRoot],
+ * where oldRoot is the empty-tree root and newRoot equals the challenge
+ * proof's merkleRoot. Deterministic, so it is cached on disk like the
+ * challenge proof.
+ */
+export async function generateInsertionTransition(): Promise<OnChainTransition> {
+  const cacheFile = path.join(testDir, ".root-transition-cache.json");
+  if (fs.existsSync(cacheFile)) {
+    try {
+      const v = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+      return {
+        a: [BigInt(v.a[0]), BigInt(v.a[1])],
+        b: [
+          [BigInt(v.b[0][0]), BigInt(v.b[0][1])],
+          [BigInt(v.b[1][0]), BigInt(v.b[1][1])]
+        ],
+        c: [BigInt(v.c[0]), BigInt(v.c[1])],
+        signals: v.signals.map(BigInt) as [bigint, bigint, bigint, bigint],
+        newRootBytes32: v.newRootBytes32
+      };
+    } catch {
+      // Corrupt cache: fall through and regenerate.
+    }
+  }
+
+  const poseidon = await buildPoseidon();
+  const H = (a: bigint | string, b: bigint | string) => poseidon.F.toString(poseidon([BigInt(a), BigInt(b)]));
+
+  const landIdField = LAND_ID_FIELD.toString();
+  const ownerSecret = "9876543210987654321";
+  const commitment = H(landIdField, ownerSecret);
+
+  const zeros: string[] = ["0"];
+  for (let i = 0; i < TREE_DEPTH; i++) zeros.push(H(zeros[i], zeros[i]));
+  const pathElements = zeros.slice(0, TREE_DEPTH);
+  const pathIndices = Array(TREE_DEPTH).fill(0);
+  const fold = (leaf: string) => {
+    let node = leaf;
+    for (let level = 0; level < TREE_DEPTH; level++) node = H(node, pathElements[level]);
+    return node;
+  };
+  const oldRoot = fold("0");
+  const newRoot = fold(commitment);
+
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+    { pathElements, pathIndices, leafBefore: "0", leafAfter: commitment, oldRoot, newRoot },
+    path.join(circuitsDir, "build", "rootTransition_js", "rootTransition.wasm"),
+    path.join(circuitsDir, "keys", "rootTransition_final.zkey")
+  );
+
+  const result: OnChainTransition = {
+    a: [BigInt(proof.pi_a[0]), BigInt(proof.pi_a[1])],
+    b: [
+      [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
+      [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])]
+    ],
+    c: [BigInt(proof.pi_c[0]), BigInt(proof.pi_c[1])],
+    signals: publicSignals.map(BigInt) as [bigint, bigint, bigint, bigint],
+    newRootBytes32: `0x${BigInt(newRoot).toString(16).padStart(64, "0")}`
+  };
+
+  fs.writeFileSync(
+    cacheFile,
+    JSON.stringify(
+      {
+        a: result.a.map(String),
+        b: result.b.map((row) => row.map(String)),
+        c: result.c.map(String),
+        signals: result.signals.map(String),
+        newRootBytes32: result.newRootBytes32
+      },
+      null,
+      2
+    )
+  );
 
   return result;
 }
