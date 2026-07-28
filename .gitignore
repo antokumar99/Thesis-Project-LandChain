@@ -14,3 +14,5 @@ uploads/
 .env.example
 
 package-lock.json
+circuits/build-scaling/
+apps/server/uploads/
